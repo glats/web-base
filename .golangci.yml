@@ -1,0 +1,95 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        domain:
+          list-mode: strict
+          files:
+            - "**/internal/domain/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - app.ddd/internal/domain
+        app:
+          list-mode: strict
+          files:
+            - "**/internal/app/**"
+            - "!$test"
+            - "!**/internal/app/mock/**"
+          allow:
+            - $gostd
+            - app.ddd/internal/adapter$
+            - app.ddd/internal/domain
+            - app.ddd/internal/app
+            - app.ddd/internal/common
+        adapter-contracts:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - app.ddd/internal/domain
+        port:
+          list-mode: strict
+          files:
+            - "**/internal/port/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - app.ddd/internal/domain
+            - app.ddd/internal/app
+            - app.ddd/internal/port
+        service:
+          list-mode: strict
+          files:
+            - "**/internal/service/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - app.ddd/internal/adapter$
+            - app.ddd/internal/domain
+            - app.ddd/internal/app
+            - app.ddd/internal/common
+            - app.ddd/internal/service
+        adapter-sqlite:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/sqlite/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - app.ddd/internal/adapter$
+            - app.ddd/internal/domain
+            - app.ddd/internal/adapter/sqlite
+            - github.com/stephenafamo/bob
+            - github.com/aarondl/opt
+            - github.com/amacneil/dbmate
+            - github.com/mattn/go-sqlite3
+        adapter-config:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/config/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - app.ddd/internal/adapter/config
+            - github.com/caarlos0/env
+        common:
+          list-mode: strict
+          files:
+            - "**/internal/common/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - app.ddd/internal/common
+            - github.com/rs/zerolog
+
+formatters:
+  enable:
+    - gofumpt

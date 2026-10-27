@@ -1,0 +1,174 @@
+# web-base
+
+A standalone Go web application with domain-focused commands and queries, an htmx user maintainer and SQLite
+persistence. SQL migrations, templates and static assets are embedded in the executable. There is no Node build
+step or CDN requirement.
+
+The conceptual architecture reference is [Go With The Domain](https://threedots.tech/go-with-the-domain/).
+
+## Requirements
+
+Go 1.25 or newer, **CGO enabled and a C compiler (`gcc`)**: dbmate's SQLite driver is `mattn/go-sqlite3`. The first
+build compiles SQLite and takes one to two minutes; later builds are cached.
+
+## Run
+
+```
+make dev-bootstrap   # copies env.dist to .env when it does not exist
+make dev             # go run ./cmd/web, then open http://localhost:8080
+```
+
+### Docker
+
+SQLite runs inside the application; no Compose stack or separate database container is needed.
+
+```sh
+docker build -t web-base:local .
+docker run --rm --name web-base --stop-timeout 35 \
+  -p 127.0.0.1:8080:8080 \
+  --mount type=volume,source=web-base-data,target=/data \
+  web-base:local
+```
+
+Open `http://localhost:8080`. Change the left-hand `8080` to publish another host port. SQLite persists in
+the named `web-base-data` volume at `/data/app.db`, even after the container is removed. Deleting that volume
+deletes the database. The port is published only on `127.0.0.1`.
+
+The image defaults to JSON logs and no demo users. Add `--env DB_SEED_ENABLED=true` before the image name
+to load example users; `--env LOG_PRETTY=true` enables readable terminal logs. Migrations always run before
+optional seeds. Host `.env` files are not loaded automatically or copied into the image.
+
+The multi-stage Dockerfile builds with Go 1.25.8 and CGO, then runs as UID/GID `10001:10001` in Debian slim
+with compatible glibc. A new named volume inherits the writable `/data` directory from the image; an existing
+volume must already be writable for that UID/GID. The image contains the binary and its embedded templates/assets,
+not local databases, Git history or development tools. The 35-second stop timeout covers the application's
+30-second graceful shutdown.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `HTTP_ADDR` | `:8080` | listen address |
+| `DATABASE_PATH` | `./data/app.db` | SQLite file; created and migrated at startup. Must not contain `?`, `#` or `%` |
+| `LOG_LEVEL` | `info` | minimum level for zerolog and slog (decorators log at `debug`) |
+| `LOG_PRETTY` | `false` | readable terminal output when true; JSON when false. `env.dist` sets true for local work |
+| `DB_SEED_ENABLED` | `false` | opt in to example users after migrations, before serving |
+
+Cloud deployments should use `LOG_PRETTY=false`. Existing `.env` files are not overwritten by `make dev-bootstrap`;
+add new variables to them explicitly when updating this base.
+
+## What it does
+
+One page, `/users`, with a form to add users and an editable table. Everything goes through application use cases.
+
+| Request | Answer |
+|---------|--------|
+| `GET /` | redirect to `/users` |
+| `GET /users` | full page, or only `#users-section` when the request comes from htmx |
+| `GET /users/{id}/edit` | the section with that row in edit mode |
+| `POST /users` | `201` and the section; `422` invalid, `409` email in use (the section with the message) |
+| `PUT /users/{id}` | `200` and the section; `422`/`409` as above |
+| `DELETE /users/{id}` | `200` and the section |
+| `404` / `500` | a message retargeted to `#flash` (`HX-Retarget`, `HX-Reswap`); the cause is only logged |
+
+Writes are protected by `http.CrossOriginProtection`; bodies are limited to 1 MiB. The maintainer needs htmx; there is
+no non-JavaScript fallback.
+
+## Notes and limits
+
+- Email uniqueness is case-sensitive (`A@x.io` and `a@x.io` are different users) because the domain does not
+  normalize emails.
+- `http.CrossOriginProtection` lets through only same-origin requests and requests without browser headers;
+  `Sec-Fetch-Site: same-site` is rejected on writes.
+- `make dev` is for local work: Ctrl-C in the terminal stops the server gracefully, but signalling only the `make`
+  process leaves the server running. Under a process manager run the binary (`go build -o web ./cmd/web`).
+- Responses to `GET /users` and `GET /users/{id}/edit` carry `Vary: HX-Request`, since the same URL answers a full
+  page or a fragment.
+
+## Layout
+
+```
+cmd/web/                    config → logging → migrate → open → optional seeds → app → HTTP → graceful shutdown
+internal/
+├── domain/ app/ service/ common/ port/port.go     domain, use cases, assembly and local helpers
+├── adapter/
+│   ├── repository.go       repository interfaces (contracts only)
+│   ├── config/             environment (caarlos0/env)
+│   └── sqlite/             connection, dbmate migrations, bob repository
+│       ├── migrations/     SQL files with -- migrate:up / -- migrate:down (embedded)
+│       ├── seeds/          ordered, repeatable SQL files (embedded; opt-in example users)
+│       └── models/ dberrors/ dbinfo/    generated by bob (*.bob.go, never edited by hand)
+└── port/web/               handlers, templates/ and static/ (htmx, Pico.css) embedded in the binary
+config/                     mockery.yaml, bobgen.yaml
+```
+
+## Dependency rule
+
+| Package | May import |
+|---------|------------|
+| `internal/domain` | standard library |
+| `internal/app` | adapter-root contracts, `domain`, `common` |
+| `internal/adapter` (root) | standard library and `domain` only |
+| `internal/port` (incl. `web`) | `app`, `domain` (standard library only otherwise) |
+| `internal/service` | adapter-root contracts, `app`, `domain`, `common` |
+| `internal/adapter/sqlite` | adapter-root contracts, `domain`, bob, opt, dbmate, the SQLite driver |
+| `internal/adapter/config` | the env parser |
+| `internal/common` | other `common` packages and `zerolog` |
+
+Concrete adapters and transport ports never import each other; only `cmd/` assembles. Application imports only
+the contracts-only adapter root, not concrete adapter subpackages. `task lint` enforces this with `depguard`.
+
+## Application contracts
+
+Repository interfaces live in `internal/adapter/repository.go`, separate from domain entities. Application code
+depends only on that contracts package, not concrete database implementations. Local helpers provide handler
+logging, metrics and trace contexts without requiring an external metrics or tracing service.
+Process logging is configured in `internal/common/logger`; `cmd/web` only passes the parsed level, pretty flag
+and output writer at startup. The logger does not depend on the environment adapter.
+
+## Database
+
+- Add a migration: create `internal/adapter/sqlite/migrations/<UTC timestamp>_<name>.sql` with `-- migrate:up` and
+  `-- migrate:down`, then run `make generate` and commit the regenerated models. `make generate` applies the
+  migrations to a throwaway database with dbmate and runs `bobgen-sqlite` (`config/bobgen.yaml`).
+- Migrations are applied at startup by `sqlite.Migrate`. `sqlite.Rollback` rolls back the latest one.
+  They always run regardless of environment; only pending versions apply. For multi-replica deployments, arrange
+  a single migration execution rather than assuming concurrent startup migrations are safe.
+- Bob names unique-constraint errors after the schema (`dberrors.UserErrors.ErrUniquePkMainUsers`,
+  `ErrUniqueSqliteAutoindexUsers2`). If a schema change renames them, `user_repository.go` stops compiling; update
+  `translateUniqueViolation`.
+
+### Seeds
+
+Set `DB_SEED_ENABLED=true` in `.env` to populate Ada Lovelace (`ada@example.com`) and Grace Hopper
+(`grace@example.com`). It is off by default, including in `env.dist`. No schema-migration switch is needed.
+
+The reusable runner is `sqlite.Seed(ctx, db)`. Add datasets as `internal/adapter/sqlite/seeds/NN_name.sql`:
+files run in filename order, in one transaction. Use explicit columns and `ON CONFLICT DO NOTHING`, as in
+`01_users.sql`, so repeated runs preserve existing records. Each new dataset needs a repeatability test;
+the runner does not make arbitrary SQL idempotent. Seeds have no version ledger: enabled datasets run on
+every startup. Deleted demo users are recreated when seeding remains enabled. Disable it after populating
+the database if that is not wanted. Required production reference data is separate from these demo users.
+
+## Adding an aggregate with its page
+
+In a project derived from this template: (1) the aggregate and its errors in `internal/domain/<name>`; (2) its port
+in `internal/adapter/repository.go`; (3) commands and queries in `internal/app`, then `make mock`; (4) wire them in
+`service.NewApp`; (5) a migration, `make generate` and a repository in `internal/adapter/sqlite`; (6) handlers and
+templates in `internal/port/web`, reusing the single-section pattern.
+
+## Swapping SQLite
+
+Implement `adapter.UserRepository` in a new `internal/adapter/<tech>` package. Missing records return
+`user.NotFoundError`; duplicate IDs/emails return `user.AlreadyExistsError`. Preserve contexts and errors.
+The `ListUsers` handler sorts by name and ID, so repository order is unrestricted. Add a depguard rule and change
+the wiring in `cmd/web`; domain code does not change.
+
+## Tasks
+
+`make tidy | format | lint | mock | generate | test | coverage | dev-bootstrap | dev` (the same names with
+`task`). Tools run through `go tool -modfile=./tools/go.tool.mod`. Coverage target: above 80% overall and 100% on
+command and query handlers.
+
+## Third-party files
+
+htmx 4.0.0 (0BSD) and Pico.css 2.1.1 (MIT) are vendored in `internal/port/web/static`; versions, checksums and
+licenses are in `THIRD_PARTY.md` there. See [ADR 0001](docs/adr/0001-web-base-decisions.md) for the decisions.

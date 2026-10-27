@@ -1,0 +1,9 @@
+template: testify
+packages:
+  app.ddd/internal/adapter:
+    config:
+      all: true
+      dir: "internal/app/mock"
+      structname: "{{.InterfaceName}}"
+      pkgname: mock
+      filename: "{{ .InterfaceName }}.go"

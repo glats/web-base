@@ -1,0 +1,21 @@
+plugins_preset: "none"
+plugins:
+  dbinfo:
+    disabled: false
+    pkgname: "dbinfo"
+    destination: "dbinfo"
+  models:
+    disabled: false
+    pkgname: "models"
+    destination: "models"
+  dberrors:
+    disabled: false
+    pkgname: "dberrors"
+    destination: "dberrors"
+
+sqlite:
+  driver: github.com/mattn/go-sqlite3
+  except:
+    schema_migrations:
+
+no_tests: true

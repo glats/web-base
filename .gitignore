@@ -1,0 +1,6 @@
+*.out
+.env
+.idea/
+.vscode/
+/data/
+.tmp/

@@ -1,0 +1,19 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Users</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/pico.min.css">
+<script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<main class="container">
+<h1>Users</h1>
+<div id="flash" role="alert">{{.Flash}}</div>
+{{template "main" .}}
+</main>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,27 @@
+{{define "users_section"}}<section id="users-section">
+<form id="new-user" hx-post="/users" hx-target="#users-section" hx-swap="outerHTML">
+<fieldset class="grid">
+<input name="name" placeholder="Name" aria-label="Name" value="{{.Form.Name}}" required{{if .Form.Error}} aria-invalid="true"{{end}}>
+<input name="email" type="email" placeholder="Email" aria-label="Email" value="{{.Form.Email}}" required{{if .Form.Error}} aria-invalid="true"{{end}}>
+<button type="submit">Add user</button>
+</fieldset>
+{{if .Form.Error}}<small role="alert">{{.Form.Error}}</small>{{end}}
+</form>
+{{if .Editing}}<form id="edit-user" hx-put="/users/{{pathEscape .Editing.ID}}" hx-target="#users-section" hx-swap="outerHTML"></form>
+{{end}}{{if .Users}}<table>
+<thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col"></th></tr></thead>
+<tbody>
+{{range .Users}}{{if and $.Editing (eq $.Editing.ID .ID)}}<tr>
+<td><input form="edit-user" name="name" aria-label="Name" value="{{$.Editing.Name}}" required{{if $.Editing.Error}} aria-invalid="true"{{end}}></td>
+<td><input form="edit-user" name="email" type="email" aria-label="Email" value="{{$.Editing.Email}}" required{{if $.Editing.Error}} aria-invalid="true"{{end}}>{{if $.Editing.Error}}<small role="alert">{{$.Editing.Error}}</small>{{end}}</td>
+<td><button form="edit-user" type="submit">Save</button> <button type="button" class="secondary" hx-get="/users" hx-target="#users-section" hx-swap="outerHTML">Cancel</button></td>
+</tr>
+{{else}}<tr>
+<td>{{.Name}}</td>
+<td>{{.Email}}</td>
+<td><button type="button" class="secondary" hx-get="/users/{{pathEscape .ID}}/edit" hx-target="#users-section" hx-swap="outerHTML">Edit</button> <button type="button" class="contrast" hx-delete="/users/{{pathEscape .ID}}" hx-target="#users-section" hx-swap="outerHTML" hx-confirm="Delete {{.Name}}?">Delete</button></td>
+</tr>
+{{end}}{{end}}</tbody>
+</table>
+{{else}}<p>No users yet.</p>
+{{end}}</section>{{end}}

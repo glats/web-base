@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+.tmp
+data
+*.db
+*.db-*
+*.out
+.idea
+.vscode
+tools
+docs

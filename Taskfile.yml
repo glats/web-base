@@ -1,0 +1,60 @@
+version: "3"
+
+tasks:
+  tidy:
+    desc: Tidy module dependencies
+    cmds:
+      - go mod tidy
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  format:
+    desc: Format source code
+    cmds:
+      - go tool -modfile=./tools/go.tool.mod gofumpt -l -w .
+
+  lint:
+    desc: Analyze code style, errors and layer dependencies
+    cmds:
+      - go tool -modfile=./tools/go.tool.mod golangci-lint run ./...
+
+  mock:
+    desc: Generate test mocks
+    vars:
+      MOCKERY_YAML: '{{.MOCKERY_YAML | default "./config/mockery.yaml"}}'
+    cmds:
+      - go tool -modfile=./tools/go.tool.mod mockery --config={{.MOCKERY_YAML}}
+
+  generate:
+    desc: Generate bob models from the migrations
+    vars:
+      BOB_CONFIG_FILE: '{{.BOB_CONFIG_FILE | default "./config/bobgen.yaml"}}'
+    cmds:
+      - |
+        set -euo pipefail
+        rm -rf .tmp && mkdir -p .tmp
+        go tool -modfile=./tools/go.tool.mod dbmate --url "sqlite:{{.ROOT_DIR}}/.tmp/gen.db" --migrations-dir ./internal/adapter/sqlite/migrations --no-dump-schema up
+        cd internal/adapter/sqlite
+        SQLITE_DSN="{{.ROOT_DIR}}/.tmp/gen.db" go tool -modfile={{.ROOT_DIR}}/tools/go.tool.mod bobgen-sqlite -c "{{.ROOT_DIR}}/{{.BOB_CONFIG_FILE}}"
+        cd ../../..
+        rm -rf .tmp
+
+  dev-bootstrap:
+    desc: Create .env from env.dist when it does not exist
+    cmds:
+      - test -f .env || cp env.dist .env
+
+  dev:
+    desc: Run the web application
+    deps: [dev-bootstrap]
+    cmds:
+      - go run ./cmd/web
+
+  coverage:
+    desc: Display coverage report
+    cmds:
+      - go test -coverprofile=coverage.out $(go list ./... | grep -v -e /mock -e /cmd/ -e /sqlite/models -e /sqlite/dberrors -e /sqlite/dbinfo)
+      - go tool cover -func=coverage.out
